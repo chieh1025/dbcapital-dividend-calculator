@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>現金股利與現金增資認購試算表</title>
+    <!-- React 核心 -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 圖標 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- html2canvas: 用於將網頁區塊轉為圖片 -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    
+    <style>
+        /* 列印專用樣式表 */
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; padding: 0 !important; }
+            .card { 
+                box-shadow: none !important; 
+                border: none !important; 
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            .print-only { display: block !important; }
+            .print-border { border: 2px solid #000 !important; }
+            #print-section {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                padding: 20px;
+            }
+            /* 列印時強制字體大小調整，確保清晰 */
+            .print-text-lg { font-size: 14pt !important; }
+            .print-text-xl { font-size: 16pt !important; }
+            .print-text-2xl { font-size: 20pt !important; }
+        }
+        
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-gray-100 text-slate-800 font-sans min-h-screen flex items-center justify-center py-10">
+    <div id="root" class="w-full max-w-3xl px-4"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        // 格式化金錢 (顯示用，含 $)
+        const formatMoney = (num) => {
+            return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(num);
+        };
+
+        // 格式化輸入框數值 (加上千分位，不含 $)
+        const formatInput = (val) => {
+            if (val === '' || val === undefined || val === null) return '';
+            const str = val.toString();
+            const parts = str.split('.');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+            return parts.join('.');
+        };
+
+        function App() {
+            // ==========================================
+            // ★★★ 管理員設定區 (請在此修改參數) ★★★
+            // ==========================================
+            
+            // 設定 1: 是否開放股東自行修改/測試股利金額?
+            // true  (Yes) = 顯示「修改參數」按鈕，股東可以自己填數字試算
+            // false (No)  = 隱藏按鈕，股東只能看到下方設定好的固定金額 (正式公告用)
+            const ALLOW_USER_EDIT_PARAMS = false; 
+
+            // 設定 2: 是否強制股東必須先將股利「全數抵充」後，才能填寫額外認購?
+            // true  (Yes) = 若有剩餘股利未抵繳，鎖住額外認購欄位 (簡化金流，避免空轉)
+            // false (No)  = 不限制，股東可自由決定抵繳多少，並同時進行現金認購
+            const FORCE_FULL_OFFSET_USAGE = true;
+
+            // 設定 3: 公司預設數值 (如果不開放修改，這就是最終顯示金額)
+            const [companyName, setCompanyName] = useState("達飆資本(股)");
+            const [div2025, setDiv2025] = useState(55000);   // FY2025 預設值
+            const [div2026H1, setDiv2026H1] = useState(15000); // 2026H1 預設值
+            const [subscriptionPrice, setSubscriptionPrice] = useState(115000); // 現金增資價格 預設值
+            
+            // ==========================================
+
+            // 狀態管理 (預設為鎖定模式)
+            const [isEditMode, setIsEditMode] = useState(false);
+
+            // --- 股東輸入 ---
+            const [name, setName] = useState('');
+            const [shares, setShares] = useState(''); 
+            const [type, setType] = useState('natural'); 
+            
+            // --- 抵繳設定 ---
+            const [willingToOffset, setWillingToOffset] = useState(false);
+            const [offsetShares, setOffsetShares] = useState(''); 
+
+            // --- 額外認購設定 ---
+            const [additionalShares, setAdditionalShares] = useState('');
+
+            // --- 下載狀態 ---
+            const [isCapturing, setIsCapturing] = useState(false);
+
+            // --- 通用數值輸入處理器 ---
+            const handleNumChange = (setter) => (e) => {
+                const raw = e.target.value.replace(/,/g, ''); 
+                if (raw === '' || !isNaN(raw)) {
+                    setter(raw);
+                }
+            };
+
+            // --- 截圖下載功能 ---
+            const handleDownloadImage = () => {
+                const element = document.getElementById('print-section');
+                if(!element) return;
+                
+                setIsCapturing(true);
+
+                // 產生時間戳記 (YYYYMMDDHHmm)
+                const now = new Date();
+                const timestamp = now.getFullYear().toString() +
+                    (now.getMonth() + 1).toString().padStart(2, '0') +
+                    now.getDate().toString().padStart(2, '0') +
+                    now.getHours().toString().padStart(2, '0') +
+                    now.getMinutes().toString().padStart(2, '0');
+
+                html2canvas(element, {
+                    scale: 2, 
+                    backgroundColor: '#ffffff', 
+                    useCORS: true
+                }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const link = document.createElement('a');
+                    link.href = imgData;
+                    link.download = `股利試算確認單_${name || '股東'}_${timestamp}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    setIsCapturing(false);
+                }).catch(err => {
+                    console.error("截圖失敗:", err);
+                    alert("圖片生成失敗，請嘗試直接使用手機截圖功能。");
+                    setIsCapturing(false);
+                });
+            };
+
+            // --- 核心計算 ---
+            const calcSingleDividend = (shareCount, rate, type) => {
+                const gross = Math.floor(shareCount * rate);
+                let hi = 0;
+                if (type === 'natural' && gross >= 20000) {
+                    hi = Math.floor(gross * 0.0211);
+                }
+                return { gross, hi, net: gross - hi };
+            };
+
+            const result = useMemo(() => {
+                const shareCount = Number(shares) || 0;
+                if (shareCount <= 0) return null;
+
+                const res2025 = calcSingleDividend(shareCount, div2025, type);
+                const res2026H1 = calcSingleDividend(shareCount, div2026H1, type);
+                const totalNetDividend = res2025.net + res2026H1.net;
+
+                let finalOffsetShares = 0;
+                let finalOffsetCost = 0;
+                let maxOffsetSharesPossible = 0;
+                if (subscriptionPrice > 0) {
+                    maxOffsetSharesPossible = Math.floor(totalNetDividend / subscriptionPrice);
+                }
+
+                if (willingToOffset) {
+                    let inputOffsetShares = Number(offsetShares) || 0;
+                    if (inputOffsetShares > maxOffsetSharesPossible) {
+                        inputOffsetShares = maxOffsetSharesPossible;
+                    }
+                    finalOffsetShares = inputOffsetShares;
+                    finalOffsetCost = finalOffsetShares * subscriptionPrice;
+                }
+
+                let extraShares = Number(additionalShares) || 0;
+                let extraCost = extraShares * subscriptionPrice;
+
+                const totalNewShares = finalOffsetShares + extraShares;
+                const totalCost = finalOffsetCost + extraCost;
+
+                const remainingDividendCash = totalNetDividend - finalOffsetCost;
+                const finalBalance = remainingDividendCash - extraCost;
+
+                return {
+                    res2025,
+                    res2026H1,
+                    totalNetDividend,
+                    maxOffsetSharesPossible,
+                    finalOffsetShares,
+                    finalOffsetCost,
+                    extraShares,
+                    extraCost,
+                    totalNewShares,
+                    totalCost,
+                    remainingDividendCash,
+                    finalBalance
+                };
+
+            }, [shares, div2025, div2026H1, type, willingToOffset, offsetShares, additionalShares, subscriptionPrice]);
+
+            return (
+                <div>
+                    {/* 公司參數設定 (列印時隱藏) */}
+                    <div className="bg-slate-800 text-white p-6 rounded-t-xl shadow-lg no-print">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="font-bold text-xl"><i className="fas fa-building mr-2"></i>股利計算參數</h2>
+                            
+                            {/* 只有在允許編輯時才顯示按鈕 (根據上方 ALLOW_USER_EDIT_PARAMS 決定) */}
+                            {ALLOW_USER_EDIT_PARAMS && (
+                                <button 
+                                    onClick={() => setIsEditMode(!isEditMode)}
+                                    className="text-sm bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded transition"
+                                >
+                                    {isEditMode ? '鎖定參數' : '修改參數'}
+                                </button>
+                            )}
+                        </div>
+                        
+                        {isEditMode ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-base">
+                                <div className="md:col-span-2">
+                                    <label className="block text-slate-400 mb-2">公司名稱</label>
+                                    <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded p-3 text-white" />
+                                </div>
+                                <div>
+                                    <label className="block text-slate-400 mb-2">FY2025 股利/股</label>
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-3 text-slate-400">$</span>
+                                        <input type="text" value={formatInput(div2025)} onChange={handleNumChange(setDiv2025)} className="w-full bg-slate-700 border border-slate-600 rounded p-3 pl-8 text-white" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-slate-400 mb-2">2026H1 股利/股</label>
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-3 text-slate-400">$</span>
+                                        <input type="text" value={formatInput(div2026H1)} onChange={handleNumChange(setDiv2026H1)} className="w-full bg-slate-700 border border-slate-600 rounded p-3 pl-8 text-white" />
+                                    </div>
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-slate-400 mb-2">現金增資價格</label>
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-3 text-slate-400">$</span>
+                                        <input type="text" value={formatInput(subscriptionPrice)} onChange={handleNumChange(setSubscriptionPrice)} className="w-full bg-slate-700 border border-slate-600 rounded p-3 pl-8 text-white" />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-4 text-base">
+                                <div className="w-full font-bold text-xl mb-2">{companyName}</div>
+                                <div className="bg-slate-700 px-4 py-2 rounded"><span className="text-slate-400">FY2025：</span>${formatInput(div2025)}</div>
+                                <div className="bg-slate-700 px-4 py-2 rounded"><span className="text-slate-400">2026H1：</span>${formatInput(div2026H1)}</div>
+                                <div className="bg-slate-700 px-4 py-2 rounded"><span className="text-slate-400">現增價：</span>${formatInput(subscriptionPrice)}</div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 股東填寫區 Card */}
+                    <div className="bg-white p-8 md:p-10 shadow-xl rounded-b-xl border border-slate-200 card">
+                        
+                        <div className="text-center mb-8 no-print">
+                            <h1 className="text-3xl font-bold text-slate-800">現金增資認購意願試算表</h1>
+                            <p className="text-slate-500 mt-3 text-base">含現金股利抵繳試算</p>
+                        </div>
+
+                        {/* ========================================= */}
+                        {/* ★★★ 新增：FY2026 主要事件時程公告區 ★★★ */}
+                        {/* ========================================= */}
+                        <div className="bg-blue-50 border-l-8 border-blue-500 p-6 mb-10 rounded-r-lg shadow-sm no-print">
+                            <h3 className="text-xl font-bold text-blue-800 mb-4 flex items-center">
+                                <i className="fas fa-calendar-alt mr-3"></i>FY2026-主要事件時程
+                            </h3>
+                            <ul className="space-y-3 text-slate-700 font-medium text-base">
+                                <li className="flex gap-2"><span className="text-blue-600 font-bold min-w-[1.5rem]">1.</span> <span>3/28 股東會通過2025應付股利</span></li>
+                                <li className="flex gap-2"><span className="text-blue-600 font-bold min-w-[1.5rem]">2.</span> <span>5月調查7月現金增資意願及金額範圍</span></li>
+                                <li className="flex gap-2"><span className="text-blue-600 font-bold min-w-[1.5rem]">3.</span> <span>7/6~7/10 結帳公布6/30淨值+決議2026H1應付股利+公辦增資價格</span></li>
+                                <li className="flex gap-2"><span className="text-blue-600 font-bold min-w-[1.5rem]">4.</span> <span>7/20~7/29 股利原地轉增資收件</span></li>
+                                <li className="flex gap-2"><span className="text-blue-600 font-bold min-w-[1.5rem]">5.</span> <span>7/20~7/29 現金增資收件+匯款</span></li>
+                                <li className="flex gap-2"><span className="text-blue-600 font-bold min-w-[1.5rem]">6.</span> <span>8/17~8/21 2025股利匯款+2026H1股利匯款</span></li>
+                            </ul>
+                        </div>
+                        {/* ========================================= */}
+
+                        {/* Step 1: 基本資料 (列印時隱藏) */}
+                        <div className="space-y-8 no-print">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div>
+                                    <label className="block text-base font-bold text-slate-700 mb-2">股東姓名</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xl"
+                                        placeholder="請輸入姓名"
+                                        value={name}
+                                        onChange={e => setName(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-base font-bold text-slate-700 mb-2">目前持有股數</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xl"
+                                        placeholder="例如: 10"
+                                        value={formatInput(shares)}
+                                        onChange={handleNumChange(setShares)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-base font-bold text-slate-700 mb-3">身分別 <span className="text-sm font-normal text-slate-500">(法人免扣二代健保)</span></label>
+                                <div className="flex gap-6">
+                                    <label className={`flex-1 p-4 border rounded-lg cursor-pointer flex items-center justify-center gap-3 transition ${type === 'natural' ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                                        <input type="radio" name="type" value="natural" checked={type === 'natural'} onChange={() => setType('natural')} className="hidden" />
+                                        <i className="fas fa-user text-lg"></i> <span className="text-lg">自然人</span>
+                                    </label>
+                                    <label className={`flex-1 p-4 border rounded-lg cursor-pointer flex items-center justify-center gap-3 transition ${type === 'legal' ? 'bg-purple-50 border-purple-500 text-purple-700 font-bold' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                                        <input type="radio" name="type" value="legal" checked={type === 'legal'} onChange={() => setType('legal')} className="hidden" />
+                                        <i className="fas fa-building text-lg"></i> <span className="text-lg">法人</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* 試算結果預覽 (股利部分) */}
+                            {result && (
+                                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200 mt-6 text-base fade-in">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <span className="text-slate-600 font-medium">可運用股利總淨額</span>
+                                        <span className="font-bold text-2xl text-blue-600">{formatMoney(result.totalNetDividend)}</span>
+                                    </div>
+                                    <div className="text-sm text-slate-500 space-y-1 pl-2 border-l-4 border-slate-200">
+                                        <div>
+                                            FY2025: {formatMoney(result.res2025.gross)} 
+                                            {result.res2025.hi > 0 ? <span className="text-red-500"> - {formatMoney(result.res2025.hi)}(二代健保)</span> : ''} 
+                                            = <span className="font-bold">{formatMoney(result.res2025.net)}</span>
+                                        </div>
+                                        <div>
+                                            2026H1: {formatMoney(result.res2026H1.gross)} 
+                                            {result.res2026H1.hi > 0 ? <span className="text-red-500"> - {formatMoney(result.res2026H1.hi)}(二代健保)</span> : ''} 
+                                            = <span className="font-bold">{formatMoney(result.res2026H1.net)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Step 2: 增資認購意願 (列印時隱藏) */}
+                        {result && (
+                            <div className="pt-8 border-t border-slate-100 no-print mt-8">
+                                <h3 className="font-bold text-xl text-slate-800 mb-6"><i className="fas fa-pen-nib text-green-600 mr-2"></i>增資認購意願</h3>
+                                
+                                {/* A. 股利抵繳 */}
+                                <label className="flex items-center gap-4 cursor-pointer group mb-6">
+                                    <div className={`w-7 h-7 rounded border flex items-center justify-center transition ${willingToOffset ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 bg-white'}`}>
+                                        {willingToOffset && <i className="fas fa-check"></i>}
+                                    </div>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={willingToOffset} 
+                                        onChange={e => setWillingToOffset(e.target.checked)} 
+                                        className="hidden"
+                                    />
+                                    <span className="font-bold text-lg text-slate-700">我願意以股利抵繳，認購新股</span>
+                                </label>
+
+                                {willingToOffset && (
+                                    <div className="bg-green-50 p-6 rounded-lg border border-green-100 mb-6 fade-in">
+                                        <div className="flex flex-col md:flex-row md:items-center gap-6">
+                                            <div className="flex-1">
+                                                <label className="block text-base font-bold text-green-800 mb-2">欲抵繳股數</label>
+                                                <div className="flex items-center gap-3">
+                                                    <input 
+                                                        type="text" 
+                                                        className="w-full p-3 border-b-2 border-green-300 bg-transparent focus:border-green-600 outline-none font-bold text-2xl text-green-700 placeholder-green-300"
+                                                        placeholder={`最多 ${formatInput(result.maxOffsetSharesPossible)} 股`}
+                                                        value={formatInput(offsetShares)}
+                                                        onChange={handleNumChange(setOffsetShares)}
+                                                    />
+                                                    <span className="text-green-800 font-bold text-lg">股</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 text-right">
+                                                <div className="text-sm text-green-600 mb-1">抵繳金額</div>
+                                                <div className="text-2xl font-bold text-green-700">{formatMoney(result.finalOffsetCost)}</div>
+                                            </div>
+                                        </div>
+                                        {Number(offsetShares) > result.maxOffsetSharesPossible && (
+                                            <p className="text-sm text-red-500 mt-2 font-bold">
+                                                * 超過上限，將自動調整為 {formatInput(result.maxOffsetSharesPossible)} 股
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* B. 額外現金認購 (修改後：加入鎖定邏輯) */}
+                                {(() => {
+                                    // 判斷是否還有剩餘可抵繳股數
+                                    const currentOffset = Number(offsetShares) || 0;
+                                    // 邏輯：如果有「最大可抵繳股數」(>0)，且 (沒勾選抵繳 OR 抵繳股數沒填滿)，就鎖住額外認購
+                                    // ★★★ 這裡加入了 FORCE_FULL_OFFSET_USAGE 開關 ★★★
+                                    const hasRemainingOffset = FORCE_FULL_OFFSET_USAGE && result.maxOffsetSharesPossible > 0 && 
+                                        (!willingToOffset || currentOffset < result.maxOffsetSharesPossible);
+
+                                    return (
+                                        <div className={`mt-8 transition-opacity ${hasRemainingOffset ? 'opacity-50' : 'opacity-100'}`}>
+                                            <label className="block text-base font-bold text-slate-700 mb-3">
+                                                除上述抵繳外，預計再投入現金參與增資股數 <span className="text-yellow-700 font-normal text-sm">(2026.07月底繳款)</span>
+                                            </label>
+                                            
+                                            <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-100 flex flex-col md:flex-row md:items-center gap-6 relative">
+                                                
+                                                {/* 鎖定遮罩與提示訊息 */}
+                                                {hasRemainingOffset && (
+                                                    <div className="absolute inset-0 bg-gray-100/80 z-10 flex items-center justify-center rounded-lg backdrop-blur-[1px]">
+                                                        <div className="bg-white p-4 rounded-lg shadow-lg border border-red-200 text-center mx-4">
+                                                            <i className="fas fa-exclamation-circle text-red-500 text-2xl mb-2"></i>
+                                                            <p className="text-red-600 font-bold">
+                                                                為簡化金流程序<br/>
+                                                                請先將股利「全數抵充」增資股款<br/>
+                                                                方可填寫額外認購
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3">
+                                                        <input 
+                                                            type="text" 
+                                                            className="w-full p-3 border-b-2 border-yellow-300 bg-transparent focus:border-yellow-600 outline-none font-bold text-2xl text-yellow-800 placeholder-yellow-300 disabled:cursor-not-allowed"
+                                                            placeholder="0"
+                                                            value={formatInput(additionalShares)}
+                                                            onChange={handleNumChange(setAdditionalShares)}
+                                                            disabled={hasRemainingOffset}
+                                                        />
+                                                        <span className="text-yellow-800 font-bold text-lg">股</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 text-right">
+                                                    <div className="text-sm text-yellow-700 mb-1">額外認購金額</div>
+                                                    <div className="text-2xl font-bold text-yellow-800">{formatMoney(result.extraCost)}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
+
+                        {/* Step 3: 最終通知單 (列印時這是唯一主角) */}
+                        {result && (
+                            <div id="print-section" className="mt-12 border-4 border-slate-800 rounded-xl p-8 relative bg-white print-border">
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-6">
+                                    <span className="text-slate-800 font-bold tracking-widest text-lg uppercase">確認通知單</span>
+                                </div>
+                                
+                                <div className="text-center mb-8">
+                                    <h3 className="text-2xl font-bold text-slate-900">{companyName}</h3>
+                                    <p className="text-base text-slate-500 mt-1">現金股利發放暨增資認購確認單</p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-base mb-8">
+                                    <div className="text-slate-600">股東姓名：<span className="text-slate-900 font-bold text-lg">{name || '-'}</span></div>
+                                    <div className="text-slate-600 text-right">持有股數：<span className="text-slate-900 font-bold text-lg">{formatInput(shares) || '-'}</span></div>
+                                    
+                                    <div className="col-span-2 border-b border-dashed border-slate-300 my-2"></div>
+                                    
+                                    {/* 1. 可用資金 */}
+                                    <div className="text-slate-900 font-bold text-lg print-text-lg">1. 可運用股利總淨額</div>
+                                    <div className="text-right font-bold text-blue-700 text-xl print-text-xl">{formatMoney(result.totalNetDividend)}</div>
+                                    
+                                    {/* 1.1 詳細明細 */}
+                                    <div className="col-span-2 bg-slate-50 p-3 rounded text-sm text-slate-600 space-y-1 mt-1 border border-slate-100">
+                                        <div className="flex justify-between">
+                                            <span>FY2025:</span>
+                                            <span>
+                                                {formatMoney(result.res2025.gross)} (稅前) 
+                                                {result.res2025.hi > 0 ? ` - ${formatMoney(result.res2025.hi)} (二代健保)` : ''} 
+                                                = <b>{formatMoney(result.res2025.net)}</b>
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>2026H1:</span>
+                                            <span>
+                                                {formatMoney(result.res2026H1.gross)} (稅前) 
+                                                {result.res2026H1.hi > 0 ? ` - ${formatMoney(result.res2026H1.hi)} (二代健保)` : ''} 
+                                                = <b>{formatMoney(result.res2026H1.net)}</b>
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* 2. 認購明細 */}
+                                    <div className="text-slate-900 font-bold mt-4 text-lg print-text-lg">2. 認購新股明細</div>
+                                    <div className="text-right font-bold mt-4 text-green-700 text-lg">共 {formatInput(result.totalNewShares)} 股</div>
+                                    
+                                    <div className="text-slate-600 pl-4">A. 股利抵繳 ({formatInput(result.finalOffsetShares)} 股)</div>
+                                    <div className="text-right text-slate-600">-{formatMoney(result.finalOffsetCost)}</div>
+                                    
+                                    <div className="text-slate-600 pl-4">B. 現金認購 <span className="text-sm text-slate-500">(2026.07月底繳款)</span></div>
+                                    <div className="text-right text-slate-600 block">({formatInput(result.extraShares)} 股)</div>
+                                    <div className="text-right text-slate-600 col-span-2 -mt-2">-{formatMoney(result.extraCost)}</div>
+
+                                    <div className="col-span-2 border-b border-dashed border-slate-300 my-2"></div>
+
+                                    {/* 3. 預計收取 */}
+                                    <div className="text-slate-900 font-bold text-lg print-text-lg">3. 2026.08月中預計收取股利淨額</div>
+                                    <div className="text-right font-bold text-blue-700 text-xl print-text-xl">{formatMoney(result.remainingDividendCash)}</div>
+                                    <div className="col-span-2 text-sm text-slate-500 pl-4">
+                                        (可運用股利總淨額 - A.股利抵繳金額)
+                                    </div>
+
+                                    <div className="col-span-2 border-b-2 border-slate-800 my-4"></div>
+                                    
+                                    {/* 4. 最終結果 */}
+                                    <div className="col-span-2">
+                                        <div className="text-lg font-bold text-slate-900 mb-2 print-text-lg">FY2026股東實際應收付淨額</div>
+                                        <div className={`text-right text-3xl font-bold print-text-2xl ${result.finalBalance >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+                                            {formatMoney(Math.abs(result.finalBalance))}
+                                        </div>
+                                        <div className={`text-right text-sm font-bold mt-1 ${result.finalBalance >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                            {result.finalBalance >= 0 ? '(公司應發放現金)' : '(股東應補繳股款)'}
+                                        </div>
+                                    </div>
+                                    
+                                    {/* 簽名欄位 (列印時顯示) */}
+                                    <div className="col-span-2 mt-10 pt-10 border-t border-slate-400 print-only hidden">
+                                        <div className="flex justify-between items-end">
+                                            <div className="text-base text-slate-600">股東簽章：____________________</div>
+                                            <div className="text-base text-slate-600">日期：____ 年 ____ 月 ____ 日</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="no-print text-center">
+                                    <p className="text-sm text-slate-500 mb-4">請點擊下方按鈕下載確認單圖片回傳給公司承辦人</p>
+                                    <button 
+                                        onClick={handleDownloadImage}
+                                        disabled={isCapturing}
+                                        className="bg-blue-600 text-white px-8 py-4 rounded-full hover:bg-blue-700 transition text-lg font-bold shadow-lg flex items-center justify-center gap-2 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isCapturing ? (
+                                            <>
+                                                <i className="fas fa-spinner fa-spin"></i> 圖片生成中...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <i className="fas fa-image"></i> 下載確認單圖片 (推薦)
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                    </div>
+                    
+                    <div className="text-center mt-10 text-slate-400 text-sm no-print">
+                        © 2025 股務小幫手 | 資料僅供試算，實際金額以公司正式通知為準
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
