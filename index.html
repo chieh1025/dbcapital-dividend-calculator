@@ -4,17 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>現金股利與現金增資認購試算表</title>
-    <!-- React 核心 -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome 圖標 -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <!-- html2canvas: 用於將網頁區塊轉為圖片 -->
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-    <!-- jsPDF: 用於生成 PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
@@ -76,7 +71,6 @@
 
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef } = React;
-        const { jsPDF } = window.jspdf;
 
         // ==========================================
         // ★★★ CONFIG 全域設定區 ★★★
@@ -87,7 +81,6 @@
             allowUserEditParams: false,
             
             // ★★★ n8n Webhook URL (使用 Cloudflare Worker) ★★★
-            // 已更新為您提供的 Worker URL
             n8nApiUrl: 'https://n8n-dbcapital-tool.chieh1025.workers.dev/', 
             
             forceFullOffset: true,
@@ -130,7 +123,7 @@
                 { id: "16", label: "16 廖**" },
                 { id: "18", label: "18 潘**" },
                 { id: "19", label: "19 曾**" },
-                { id: "20", label: "20 展*********" },
+                { id: "20", label: "20 展***********" },
                 { id: "21", label: "21 比*******" },
                 { id: "22", label: "22 陳**" },
                 { id: "23", label: "23 蕭**" },
@@ -343,9 +336,8 @@
                 if (raw === '' || !isNaN(raw)) setter(raw);
             };
 
-            // ★★★ 關鍵修復：這裡補回了 handleShareTypeChange ★★★
             const handleShareTypeChange = (typeId) => (e) => {
-                if (isVerified) return; // 驗證後鎖定，避免手動修改
+                if (isVerified) return; 
                 const raw = e.target.value.replace(/,/g, ''); 
                 if (raw === '' || !isNaN(raw)) {
                     setSharesMap(prev => ({ ...prev, [typeId]: raw }));
@@ -470,6 +462,11 @@
 
             const handleGeneratePDF = async (action) => {
                 if (!shareholderId) { alert("請先選擇股東身分！"); return; }
+                
+                // ★★★ 改在這裡才呼叫，避免初始化錯誤 ★★★
+                if (!window.jspdf) { alert("PDF 元件尚未載入，請重新整理"); return; }
+                const { jsPDF } = window.jspdf;
+
                 setIsProcessing(true);
                 const input = document.getElementById(`doc-preview-${selectedDocId}`);
                 
@@ -615,7 +612,8 @@
                                                 {!isVerified ? (
                                                     <div className="space-y-3">
                                                         <select className="w-full p-3 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={shareholderId} onChange={handleShareholderSelect}>
-                                                            <option value="">-- 請選擇股東戶號 --</option>{CONFIG.shareholderOptions.map(opt => (<option key={opt.id} value={opt.id}>{opt.label}</option>))}
+                                                            <option value="">-- 請選擇股東戶號 --</option>
+                                                            {CONFIG.shareholderOptions.map(opt => (<option key={opt.id} value={opt.id}>{opt.label}</option>))}
                                                         </select>
                                                         {shareholderId && (
                                                             <div className="flex gap-2 fade-in">
@@ -709,7 +707,8 @@
                                         {!isVerified ? (
                                             <div className="space-y-3">
                                                 <select className="w-full p-3 border border-slate-300 rounded-lg text-lg bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" value={shareholderId} onChange={handleShareholderSelect}>
-                                                    <option value="">-- 請選擇股東戶號 --{CONFIG.shareholderOptions.map(opt => (<option key={opt.id} value={opt.id}>{opt.label}</option>))}
+                                                    <option value="">-- 請選擇股東戶號 --</option>
+                                                    {CONFIG.shareholderOptions.map(opt => (<option key={opt.id} value={opt.id}>{opt.label}</option>))}
                                                 </select>
                                                 {shareholderId && (
                                                     <div className="flex gap-2 fade-in">
@@ -777,5 +776,3 @@
     </script>
 </body>
 </html>
-
-
