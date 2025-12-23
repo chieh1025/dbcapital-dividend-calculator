@@ -112,12 +112,13 @@
 
             subscriptionPrice: 115000,
 
-            // ★★★ 股東戶號清單 (已根據 CSV 更新) ★★★
-            // 已移除 CSV 中不存在的 24 號
+            // ★★★ 股東戶號清單 (手動設定以保護隱私) ★★★
+            // 已更新至 34 位股東
             shareholderIds: [
-                "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
-                "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
-                "21", "22", "23", "25", "26", "27"
+                "01", "02", "03", "04", "05", "06", "08", "09", "10", "12",
+                "13", "14", "15", "16", "18", "19", "20", "21", "22", "23",
+                "25", "26", "27", "28", "29", "30", "31", "32", "33", "34",
+                "35", "36", "37", "38"
             ],
 
             documents: [
@@ -951,37 +952,39 @@
                                     </div>
                                     
                                     <div className="space-y-4">
-                                        <select 
-                                            className="w-full p-3 border border-slate-300 rounded-lg text-lg bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none"
-                                            value={shareholderId}
-                                            onChange={handleShareholderSelect}
-                                        >
-                                            <option value="">-- 請選擇股東戶號 --</option>
-                                            {CONFIG.shareholderIds.map(id => (
-                                                <option key={id} value={id}>{id} (隱藏姓名)</option>
-                                            ))}
-                                        </select>
-
-                                        {shareholderId && !isVerified && (
-                                            <div className="flex gap-2 fade-in">
-                                                <input 
-                                                    type="password" 
-                                                    placeholder="請輸入身分證末四碼" 
-                                                    className="flex-1 p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                                                    value={inputVerifyCode}
-                                                    onChange={(e) => setInputVerifyCode(e.target.value)}
-                                                />
-                                                <button 
-                                                    onClick={handleVerifyIdentity}
-                                                    disabled={isVerifying}
-                                                    className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
+                                        {!isVerified ? (
+                                            <div className="space-y-3">
+                                                <select 
+                                                    className="w-full p-3 border border-slate-300 rounded-lg text-lg bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={shareholderId}
+                                                    onChange={handleShareholderSelect}
                                                 >
-                                                    {isVerifying ? '驗證中...' : '驗證'}
-                                                </button>
-                                            </div>
-                                        )}
+                                                    <option value="">-- 請選擇股東戶號 --</option>
+                                                    {CONFIG.shareholderIds.map(id => (
+                                                        <option key={id} value={id}>{id} (隱藏姓名)</option>
+                                                    ))}
+                                                </select>
 
-                                        {isVerified && (
+                                                {shareholderId && (
+                                                    <div className="flex gap-2 fade-in">
+                                                        <input 
+                                                            type="password" 
+                                                            placeholder="請輸入身分證末四碼" 
+                                                            className="flex-1 p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                            value={inputVerifyCode}
+                                                            onChange={(e) => setInputVerifyCode(e.target.value)}
+                                                        />
+                                                        <button 
+                                                            onClick={handleVerifyIdentity}
+                                                            disabled={isVerifying}
+                                                            className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
+                                                        >
+                                                            {isVerifying ? '驗證中...' : '驗證'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
                                             <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center fade-in">
                                                 <i className="fas fa-check-circle text-xl mr-3"></i>
                                                 <div>
