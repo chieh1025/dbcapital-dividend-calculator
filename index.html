@@ -615,7 +615,7 @@
                                                 {!isVerified ? (
                                                     <div className="space-y-3">
                                                         <select className="w-full p-3 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={shareholderId} onChange={handleShareholderSelect}>
-                                                            <option value="">-- 請選擇股東戶號 --</option>{CONFIG.shareholderIds.map(id => (<option key={id} value={id}>{id}</option>))}
+                                                            <option value="">-- 請選擇股東戶號 --</option>{CONFIG.shareholderOptions.map(opt => (<option key={opt.id} value={opt.id}>{opt.label}</option>))}
                                                         </select>
                                                         {shareholderId && (
                                                             <div className="flex gap-2 fade-in">
@@ -709,7 +709,7 @@
                                         {!isVerified ? (
                                             <div className="space-y-3">
                                                 <select className="w-full p-3 border border-slate-300 rounded-lg text-lg bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" value={shareholderId} onChange={handleShareholderSelect}>
-                                                    <option value="">-- 請選擇股東戶號 --</option>{CONFIG.shareholderIds.map(id => (<option key={id} value={id}>{id}</option>))}
+                                                    <option value="">-- 請選擇股東戶號 --{CONFIG.shareholderOptions.map(opt => (<option key={opt.id} value={opt.id}>{opt.label}</option>))}
                                                 </select>
                                                 {shareholderId && (
                                                     <div className="flex gap-2 fade-in">
@@ -777,4 +777,5 @@
     </script>
 </body>
 </html>
+
 
